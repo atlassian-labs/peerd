@@ -285,6 +285,16 @@ def update_route_tables(target_peerings: list, metadata: dict, dryrun: bool):
                                                 DestinationCidrBlock=cidr,
                                                 DryRun=dryrun)
                     except ClientError as err:
+                        # Handle the case where sometimes the AWS API is eventually consistent
+                        if err.response['Error']['Code'] == 'RouteAlreadyExists':
+                            LOGGER.warning(f'AWS API believes cidr {cidr} for {peering_id} already in {account_id} {vpc_id} {route_table_id}.'
+                                           'May be due to eventual consistency. Rerun tool or inspect manually.')
+                            continue
+                        # Handle the case where the route table has reached its maximum number of routes
+                        # https://docs.aws.amazon.com/vpc/latest/userguide/amazon-vpc-limits.html
+                        if err.response['Error']['Code'] == 'RouteLimitExceeded':
+                            LOGGER.error(f'Could not install route. Route limit exceeded for {account_id} {vpc_id} {route_table_id}. Request route limit increase.')
+                            break
                         if err.response['Error']['Code'] != 'DryRunOperation':
                             raise
                     LOGGER.info(f'Installed cidr {cidr} via {peering_id} to {remote_vpc_id} in {account_id} {vpc_id} {route_table_id}')
