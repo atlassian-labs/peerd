@@ -24,8 +24,15 @@ optional arguments:
 
 - Capable of creating and accepting cross-account VPC peerings.
 - Capable of creating and accepting cross-region VPC peerings.
+- Capable of creating full-meshes of VPC peerings.
+- Capable of managing overlapping meshes with the use of an environment name which is used to tag peerings.
 - Injects, repairs and removes routes as needed from VPC routing tables.
 - Overlapping meshes supported through the use of different environment names in configuration file.
+
+### Comment on other tools
+
+Ansible, Terraform, Transit Gateway are valid approaches to creating networks between AWS VPCs.
+peerd attempts to solve the issue of managing complex overlapping meshes of VPC peerings between many accounts and regions, which can be difficult with other tools or result in large configuration modules/files.
 
 ## Requirements
 
