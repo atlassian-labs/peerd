@@ -2,7 +2,6 @@
 
 peerd is an AWS VPC Peering Connection management tool.
 It manages the full lifecycle of creation, deletion and route table updates needed to make VPC peerings useful.
-USA Patent Pending 15/788,229. 
 
 ```
  ./peerd.py --help
@@ -25,9 +24,8 @@ optional arguments:
 - Capable of creating and accepting cross-account VPC peerings.
 - Capable of creating and accepting cross-region VPC peerings.
 - Capable of creating full-meshes of VPC peerings.
-- Capable of managing overlapping meshes with the use of an environment name which is used to tag peerings.
-- Injects, repairs and removes routes as needed from VPC routing tables.
 - Overlapping meshes supported through the use of different environment names in configuration file.
+- Injects, repairs and removes routes as needed from VPC routing tables.
 
 ### Comment on other tools
 
@@ -182,3 +180,4 @@ Shane Anderson, Nicolas Meessen, Abdul Karim, James Flemming, Michael Gehrmann, 
 ## License
 
 Copyright (c) 2020 Atlassian and others. Apache 2.0 licensed, see LICENSE file.
+USA Patent Pending 15/788,229. 
