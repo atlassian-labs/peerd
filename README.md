@@ -41,10 +41,11 @@ peerd attempts to solve the issue of managing complex overlapping meshes of VPC 
 
 ### Authentication
 
-peerd will assume a role with the same principal name in each account it needs to perform work in.
+peerd will assume a target IAM role with the same principal name in each account it needs to perform work in.
+The target IAM role must have EC2 route table, VPC and Peering read and write permissions.
 
  - peerd uses an initial role 'A' to assume-role into given a target account role 'B' with established trust relationships with role 'A'. 
- - peerd uses the standard boto credentials locations to obtain STS client credentials and perform Assume Role operations. See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html and https://aws.amazon.com/premiumsupport/knowledge-center/iam-assume-role-cli/
+ - To intialise role 'A', peerd uses the standard boto credentials locations to obtain STS client credentials and perform Assume Role operations. See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html and https://aws.amazon.com/premiumsupport/knowledge-center/iam-assume-role-cli/
  - Example automated provider of credentials also made by Atlassian: https://bitbucket.org/atlassian/cloudtoken/src/master/
  - Assumed roles are expected to share a common principal name across every account: `arn:aws:iam::${account}:role/${COMMON_PRINCIPAL_NAME}` . E.g.  `arn:aws:iam::0123456789:role/peerd-bot` and `arn:aws:iam::0987654321:role/peerd-bot` are two accounts with VPCs being peered together.
 
