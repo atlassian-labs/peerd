@@ -162,7 +162,7 @@ environments:
 ## Running / Executing
 
 ```
-./peerd.py --config ./build-test-config/config.yaml --environment myfirstenvironment
+./peerd.py --config ./config/config.yaml --environment myfirstenvironment
 ```
 
 ## Deleting a peering
