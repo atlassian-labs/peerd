@@ -3,6 +3,7 @@ from datetime import timedelta
 import json
 import sys
 from time import sleep
+from typing import Any, List, Mapping, Optional
 
 # Third Party
 import boto3
@@ -17,12 +18,12 @@ from peerd.decorators import memoize
 
 # Global variablees
 CLIENT_CACHE = nested_dict()
-COMMON_PRINCIPAL_NAME: str = None
-ROLE_SESSION_NAME: str = None
+COMMON_PRINCIPAL_NAME: Optional[str] = None
+ROLE_SESSION_NAME: Optional[str] = None
 STS_CLIENT_CACHE = None
 
 
-def aws_sts_client():
+def aws_sts_client() -> Any:
     """
     Uses default boto credentials locations, such as the instance metadata
     to return a sts client connection and caches it as a global variable for reuse.
@@ -38,7 +39,7 @@ def aws_sts_client():
 
 
 @memoize(timedelta(minutes=55))
-def get_role_credentials(account: str, sts_client) -> dict:
+def get_role_credentials(account: str, sts_client: Any) -> dict:
     """
     Assumes a role and returns credentials for said role.
     Requires the COMMON_PRINCIPAL_NAME to be set, usually from metadata.
@@ -73,7 +74,7 @@ def get_role_credentials(account: str, sts_client) -> dict:
         return {}
 
 
-def aws_client(account: str, service: str, region: str):
+def aws_client(account: str, service: str, region: str) -> Any:
     """
     Initialises a sts client, gets assume role credentials
     and initialises a AWS client connection to a requested resource.
@@ -120,7 +121,7 @@ def aws_client(account: str, service: str, region: str):
     return CLIENT_CACHE[account][region][service]
 
 
-def tag_resource(client, resource: str, tags: dict, dryrun: bool = False):
+def tag_resource(client: Any, resource: str, tags: Mapping, dryrun: bool = False) -> None:
     """
     Tags an AWS resource with the provided tags.
 
@@ -140,12 +141,12 @@ def tag_resource(client, resource: str, tags: dict, dryrun: bool = False):
     :returns: Nothing
     :raises BaseException: Raises an exception if there was some problem tagging the resource
     """
-    tags = [{'Key': key, 'Value': value} for (key, value) in tags.items()]
+    tags_aws = [{'Key': key, 'Value': value} for (key, value) in tags.items()]
 
     for x in range(5):
         try:
             LOGGER.debug(f'Tagging {resource}')
-            client.create_tags(Resources=[resource], Tags=tags, DryRun=dryrun)
+            client.create_tags(Resources=[resource], Tags=tags_aws, DryRun=dryrun)
             LOGGER.debug(f'Tagging {resource} successful')
             return
         except botocore.exceptions.ClientError as err:
@@ -185,7 +186,7 @@ def check_iam_role_capability(account_id: str) -> bool:
 
 
 @memoize()
-def describe_account_vpcs_cached(account_id: str, region: str) -> list:
+def describe_account_vpcs_cached(account_id: str, region: str) -> List[dict]:
     """
     Describe all the VPCs in a given account in a given region and return them as a list of descriptions
     See https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ec2.html#EC2.Client.describe_vpcs
@@ -203,7 +204,7 @@ def describe_account_vpcs_cached(account_id: str, region: str) -> list:
 
 
 @memoize()
-def describe_vpc_cached(vpc_id: str, account_id: str, region: str, **kwargs) -> dict:
+def describe_vpc_cached(vpc_id: str, account_id: str, region: str, **kwargs) -> Optional[dict]:
     """
     Describe a specific VPC from our cache of VPC descriptions for a given account and region
     Return a dict if things go as expected.
@@ -233,7 +234,7 @@ def describe_vpc_cached(vpc_id: str, account_id: str, region: str, **kwargs) -> 
 
 
 @memoize()
-def list_vpc_cidrs(vpc_id: str, account_id: str, region: str) -> list:
+def list_vpc_cidrs(vpc_id: str, account_id: str, region: str) -> List[str]:
     """
     Returns a list of vpc cidrs associated with a given vpc.
     Example use cases:
@@ -254,7 +255,7 @@ def list_vpc_cidrs(vpc_id: str, account_id: str, region: str) -> list:
 
 
 @memoize()
-def get_all_peerings(account_id: str, region: str, filters: list = []) -> list:
+def get_all_peerings(account_id: str, region: str, filters: list = []) -> List[dict]:
     """
     Return a list of all the peerings for a given account, region and filter
     Caches the result.
@@ -279,7 +280,7 @@ def get_all_peerings(account_id: str, region: str, filters: list = []) -> list:
     return [x for x in vpc_peerings if x['Status']['Code'] not in ['deleted', 'rejected']]
 
 
-def get_vpc_peering(vpc_id: str, remote_vpc_id: str, account_id: str, region: str, filters: list = []) -> dict:
+def get_vpc_peering(vpc_id: str, remote_vpc_id: str, account_id: str, region: str, filters: list = []) -> Optional[dict]:
     """
     Returns a dictionary describing a specific VPC peering between two VPCs
     From the perspective of a given account.

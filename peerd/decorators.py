@@ -1,6 +1,8 @@
 # Built in
+import datetime
 from datetime import timedelta
 from functools import wraps
+from typing import Callable, Optional, Union
 
 # Third Party
 from cachelib import SimpleCache
@@ -9,7 +11,7 @@ from cachelib import SimpleCache
 cache = SimpleCache()
 
 
-def memoize(timeout=None, invalidate=False):
+def memoize(timeout: Optional[Union[int, datetime.timedelta]] = None, invalidate: bool = False) -> Callable:
     """ Decorator to cache a function by name/args
 
     Uses the SimpleCache

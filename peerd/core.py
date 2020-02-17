@@ -1,6 +1,8 @@
 # Built in
+from copy import deepcopy
 from datetime import datetime
 from time import sleep
+from typing import Mapping, Sequence
 import sys
 
 # Third Party
@@ -14,7 +16,7 @@ from peerd.filters import (filter_working_accounts, get_all_env_peerings, get_de
                            list_dict_values)
 
 
-def create_vpc_peerings(target_peerings: list, metadata: dict, dryrun: bool):
+def create_vpc_peerings(target_peerings: Sequence, metadata: Mapping, dryrun: bool) -> None:
     """
     Loops through a list of peerings to create them.
     Requests, accepts and tags them.
@@ -51,6 +53,7 @@ def create_vpc_peerings(target_peerings: list, metadata: dict, dryrun: bool):
     :param metadata: A dictionary with the environment, owner, etc for tagging
     :type metadata: list
     """
+    pending_acceptance_peerings = []
     for peering_descriptor in target_peerings:
 
         # Unpack some common variables
@@ -82,11 +85,11 @@ def create_vpc_peerings(target_peerings: list, metadata: dict, dryrun: bool):
                     if err.response['Error']['Code'] == 'DryRunOperation':
                         continue
                     raise
-                peerding_id = ec2_peering_response['VpcPeeringConnectionId']
+                peering_id = ec2_peering_response['VpcPeeringConnectionId']
                 # Wait for the vpc peering to exist before moving on
-                LOGGER.info(f'Waiting for peering {peerding_id} to exist...')
+                LOGGER.info(f'Waiting for peering {peering_id} to exist...')
                 ec2_client.get_waiter('vpc_peering_connection_exists').wait(
-                    VpcPeeringConnectionIds=[peerding_id], WaiterConfig={'Delay': 5})
+                    VpcPeeringConnectionIds=[peering_id], WaiterConfig={'Delay': 5})
             # If the peering exists and is active, do nothing.
             elif peering['Status']['Code'] == 'active':
                 LOGGER.info(f"Active peering {peering['VpcPeeringConnectionId']} between {account_id} {vpc_id} {region}"
@@ -95,8 +98,8 @@ def create_vpc_peerings(target_peerings: list, metadata: dict, dryrun: bool):
             # If the peering is pending acceptance move to tagging and acceptance
             # Only the remote account can accept the VPC peering.
             elif peering['Status']['Code'] == 'pending-acceptance' and peering['RequesterVpcInfo']['VpcId'] == vpc_id:
-                peerding_id = peering['VpcPeeringConnectionId']
-                LOGGER.warning(f"Pending peering between {account_id} {vpc_id} {region}"
+                peering_id = peering['VpcPeeringConnectionId']
+                LOGGER.warning(f"Pending-Acceptance peering {peering_id} between {account_id} {vpc_id} {region}"
                                f" and {remote_account_id} {remote_vpc_id} {remote_region}. Will attempt recovery.")
             # We're in some weird state and need to report to a human
             else:
@@ -120,47 +123,109 @@ def create_vpc_peerings(target_peerings: list, metadata: dict, dryrun: bool):
                 tags[key] = value
             for key, value in remote_tags.items():
                 tags[key] = value
-            tag_resource(ec2_client, peerding_id, tags, dryrun=dryrun)
+            tag_resource(ec2_client, peering_id, tags, dryrun=dryrun)
 
+            # Add the peering to the list of peerings that we will need to accept
+            peering_descriptor_copy = deepcopy(peering_descriptor)
+            peering_descriptor_copy[1]['peering_id'] = peering_id
+            peering_descriptor_copy[1]['tags'] = tags
+            pending_acceptance_peerings.append(peering_descriptor_copy)
+
+        except BaseException:
+            LOGGER.error("Unexpected error: %s", sys.exc_info()[1], exc_info=True)
+            continue
+
+        LOGGER.info(f"Successfully created peering request {peering_id} between {account_id} {vpc_id} "
+                    f"{region} and {remote_account_id} {remote_vpc_id} {remote_region}")
+
+    # Return the list of peerings that need to be accepted.
+    return pending_acceptance_peerings
+
+
+def accept_vpc_peerings(target_peerings: list, metadata: dict, dryrun: bool):
+    """
+    Loops through a list of peerings, with existing peering id, to accept them.
+    Requests, accepts and tags them.
+    Repairs any half open peerings.
+
+    Example target_peerings:
+    ```
+    [
+        [
+        {
+            "account_id": "415432961280",
+            "peering_id": "pcx-41u5h345h2",
+            "vpc_id": "vpc-e08fb484",
+            "region": "ap-southeast-2",
+            "cidr_overrides": [
+                "10.53.101.0/27"
+            ],
+            "peering_tags": [
+                {
+                "peerd_az_affinity": "0"
+                }
+            ]
+        },
+        {
+            "account_id": 415432961280,
+            "peering_id": "pcx-41u5h345h2",
+            "vpc_id": "vpc-7a83b81e",
+            "region": "ap-southeast-2"
+        }
+        ]
+    ]
+    ```
+
+    :param target_peerings: A list of lists representing the requester and accepter for each peering.
+    :type target_peerings: list
+    :param metadata: A dictionary with the environment, owner, etc for tagging
+    :type metadata: list
+    """
+    for peering_descriptor in target_peerings:
+
+        # Unpack some common variables
+        account_id = peering_descriptor[0]['account_id']
+        vpc_id = peering_descriptor[0]['vpc_id']
+        region = peering_descriptor[0]['region']
+        local_tags = peering_descriptor[0].get('peering_tags', {})
+
+        remote_account_id = peering_descriptor[1]['account_id']
+        remote_vpc_id = peering_descriptor[1]['vpc_id']
+        remote_region = peering_descriptor[1]['region']
+        remote_tags = peering_descriptor[1].get('peering_tags', {})
+        peering_id = peering_descriptor[1]['peering_id']
+        tags = peering_descriptor[1]['tags']
+
+        try:
             # Accept the VPC Peering
-            LOGGER.info(f"Accepting peering request between {account_id} {vpc_id} {region} and "
+            LOGGER.info(f"Accepting peering request {peering_id} between {account_id} {vpc_id} {region} and "
                         f"{remote_account_id} {remote_vpc_id} {remote_region}")
             ec2_client = aws_client(remote_account_id, 'ec2', remote_region)
             # Wait until the peering exists
             # The AWS API is eventually consistent and we need to wait.
             LOGGER.info(f'Waiting for peering to exist...')
             ec2_client.get_waiter('vpc_peering_connection_exists').wait(
-                VpcPeeringConnectionIds=[peerding_id], WaiterConfig={'Delay': 5})
+                VpcPeeringConnectionIds=[peering_id], WaiterConfig={'Delay': 5})
             # Tag the VPC Peering
             tags['Name'] = f'peerd peering to {account_id} {vpc_id} {region}'
             tags['peerd_role'] = 'accepter'
-            tag_resource(ec2_client, peerding_id, tags, dryrun=dryrun)
+            tag_resource(ec2_client, peering_id, tags, dryrun=dryrun)
             # Accept the peering
             try:
-                ec2_client.accept_vpc_peering_connection(VpcPeeringConnectionId=peerding_id, DryRun=dryrun)
+                ec2_client.accept_vpc_peering_connection(VpcPeeringConnectionId=peering_id, DryRun=dryrun)
             except ClientError as err:
                 if err.response['Error']['Code'] == 'DryRunOperation':
                     continue
                 raise
-            # Wait until the peering is active, not provisioning (boto waiter doesn't accept filters for vpc peering api)
-            # We must wait for active state to install routes, otherwise the peering will be ignored.
-            # Note, usually this step takes a few seconds, but can sometimes take up to a minute or two in rare cases.
-            while not ec2_client.describe_vpc_peering_connections(
-                Filters=[
-                    {'Name': 'status-code', 'Values': ['active']},
-                    {'Name': 'vpc-peering-connection-id', 'Values': [peerding_id]}]
-                )['VpcPeeringConnections']:
-                LOGGER.info(f'Waiting for peering {peerding_id} to become active...')
-                sleep(5)
         except BaseException:
             LOGGER.error("Unexpected error: %s", sys.exc_info()[1], exc_info=True)
             continue
 
-        LOGGER.info(f"Successfully created peering {peerding_id} between {account_id} {vpc_id} "
+        LOGGER.info(f"Successfully accepted peering {peering_id} between {account_id} {vpc_id} "
                     f"{region} and {remote_account_id} {remote_vpc_id} {remote_region}")
 
 
-def update_route_tables(target_peerings: list, metadata: dict, dryrun: bool):
+def update_route_tables(target_peerings: list, metadata: Mapping, dryrun: bool) -> None:
     """
     Loops through a list of peerings and updates the route tables on each side.
 
@@ -226,7 +291,7 @@ def update_route_tables(target_peerings: list, metadata: dict, dryrun: bool):
         # We want to avoid adding routes for inactive peerings.
         filters = [{'Name': 'tag:peerd_created', 'Values': ['true']},
                    {'Name': 'tag:peerd_environment', 'Values': [metadata['environment']]},
-                   {'Name': 'status-code', 'Values': ['active']}]
+                   {'Name': 'status-code', 'Values': ['active', 'provisioning']}]
         if not (peering := get_vpc_peering(vpc_id, remote_vpc_id, account_id, region, filters)):
             # Since we filter for the peerd environment, remind the user that there could be a peering
             # But that it might exist as part of another environment, and thus we won't be touching it.
@@ -234,6 +299,18 @@ def update_route_tables(target_peerings: list, metadata: dict, dryrun: bool):
                            f' {metadata["environment"]}. It may exist as part of another environment.')
             continue
         peering_id = peering['VpcPeeringConnectionId']
+
+        # Wait until the peering is active, not provisioning (boto waiter doesn't accept filters for vpc peering api)
+        # We must wait for active state to install routes, otherwise the peering will be ignored.
+        # Note, usually this step takes a few seconds, but can sometimes take up to a minute or two in rare cases.
+        if peering['Status']['Code'] == 'provisioning':
+            while not ec2_client.describe_vpc_peering_connections(
+                    Filters=[
+                        {'Name': 'status-code', 'Values': ['active']},
+                        {'Name': 'vpc-peering-connection-id', 'Values': [peering_id]}]
+                    )['VpcPeeringConnections']:
+                LOGGER.info(f'Waiting for peering {peering_id} to become active...')
+                sleep(5)
 
         # Get the route tables for the local vpc relevant to the peering.
         # The vpc_route_tables function will only return peerd_eligible:true tables
@@ -306,7 +383,7 @@ def update_route_tables(target_peerings: list, metadata: dict, dryrun: bool):
                 tag_resource(ec2_client, route_table_id, tags, dryrun=dryrun)
 
 
-def clean_route_tables(peering_id: str, vpc_id: str, account_id: str, region: str, dryrun: bool):
+def clean_route_tables(peering_id: str, vpc_id: str, account_id: str, region: str, dryrun: bool) -> None:
     """
     Deletes any routes pointing at a given peering id for a given vpc.
     Only applies to route tables with tag peerd_eligible:true
@@ -351,7 +428,7 @@ def clean_route_tables(peering_id: str, vpc_id: str, account_id: str, region: st
             tag_resource(ec2_client, route_table_id, tags, dryrun=dryrun)
 
 
-def delete_unneeded_peerings(config: list, metadata: dict, dryrun: bool):
+def delete_unneeded_peerings(config: Sequence[dict], metadata: Mapping, dryrun: bool) -> None:
     """
     Compares the infrastructure with the configuration and applies
     route cleanup and peering deletion logic to remove VPC peerings.

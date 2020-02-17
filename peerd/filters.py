@@ -1,10 +1,17 @@
 # Built in
 from itertools import combinations
+from typing import List, Mapping, Sequence
 
 # Local
 from peerd import LOGGER, nested_dict
 from peerd.aws import check_iam_role_capability, get_all_peerings, list_vpc_cidrs
 from peerd.decorators import memoize
+
+
+def chunk_list(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
 
 
 def filter_working_accounts(config: list) -> list:
@@ -20,7 +27,7 @@ def filter_working_accounts(config: list) -> list:
     return [x for x in config if check_iam_role_capability(x['account_id'])]
 
 
-def list_dict_values(dict_list: list, key: str) -> list:
+def list_dict_values(dict_list: Sequence[dict], key: str) -> list:
     """
     Return a list of all unique values for a given key in a list of dictionaries.
 
@@ -55,7 +62,7 @@ def list_dict_values(dict_list: list, key: str) -> list:
 
 
 @memoize()
-def common_vpc_cidrs(peer_desc: list) -> bool:
+def common_vpc_cidrs(peer_desc: Sequence[dict]) -> bool:
     """
     Returns true if the VPCs share any CIDRs in common
     Returns false if the VPCs share no CIDRs in common
@@ -87,7 +94,7 @@ def common_vpc_cidrs(peer_desc: list) -> bool:
     return bool(set(requester_vpc_cidrs) & set(accepter_vpc_cidrs))
 
 
-def target_vpc_peerings(config: list) -> list:
+def target_vpc_peerings(config: Sequence[dict]) -> List[List[dict]]:
     """
     Wrapper for a series of functions that turns the configuration
     (which is a list of accounts, vpcs and regions) into a list of of unique peerings
@@ -116,7 +123,7 @@ def target_vpc_peerings(config: list) -> list:
         }
     ]
     ```
-    Returns a list of tuples representing peerings should exist (existing and to be created)
+    Returns a list of lists representing peerings should exist (existing and to be created)
     ```
     [
         [
@@ -153,17 +160,17 @@ def target_vpc_peerings(config: list) -> list:
     # This would result in a peering which could not be accepted.
     # Note: This would never cause a black hole, as we only install routes for
     # active peerings. But it would create some cleanup work.
-    config = sorted(config, key=lambda i: (i['account_id'], i['region']))
+    sorted_config = sorted(config, key=lambda i: (i['account_id'], i['region']))
     # Create unique combinations of peerings
     # These will be the requester and accepter for our full mesh of peerings.
-    target_peerings = list(combinations(config, 2))
+    target_peerings = list(combinations(sorted_config, 2))
     # Filter out vpcs with same cidrs
     # You cannot peer VPCs with common CIDRs, the peering will not be accepted.
-    target_peerings[:] = [list(peers) for peers in target_peerings if not common_vpc_cidrs(peers)]
-    return target_peerings
+    filtered_target_peerings = [list(peers) for peers in target_peerings if not common_vpc_cidrs(peers)]
+    return filtered_target_peerings
 
 
-def get_peering_map(config: list) -> dict:
+def get_peering_map(config: Sequence[dict]) -> dict:
     """
     Takes the config and yields a dictionary of accounts, regions,
     vpcs and the vpcs they should be peered with like so:
@@ -213,7 +220,7 @@ def get_peering_map(config: list) -> dict:
     return peering_map
 
 
-def deduplicate_list_dicts(list_dict: list, key: str) -> list:
+def deduplicate_list_dicts(list_dict: Sequence[dict], key: str) -> List[dict]:
     """
     Takes a list of dictionaries and deduplicates them based on a given key.
     Example use-case: When we get a list of all peerings from multiple accounts
@@ -226,14 +233,14 @@ def deduplicate_list_dicts(list_dict: list, key: str) -> list:
     :returns: A deduplicated list of dictionaries.
     :rtype: list
     """
-    dedup_list = []
+    dedup_list: List[dict] = []
     for dic in list_dict:
         if dic[key] not in list_dict_values(dedup_list, key):
             dedup_list.append(dic)
     return dedup_list
 
 
-def get_all_env_peerings(config: list, metadata: dict) -> list:
+def get_all_env_peerings(config: Sequence[dict], metadata: Mapping) -> List[dict]:
     """
     Given the configuration, find all the peerings which exist across all accounts
     and regions.
@@ -247,7 +254,7 @@ def get_all_env_peerings(config: list, metadata: dict) -> list:
     """
     # Get a dictionary of accounts, regions, vpcs and the vpcs they should be peered to
     config_peer_map = get_peering_map(config)
-    peerings = []
+    peerings: List[dict] = []
     for account_id, region_map in config_peer_map.items():
         for region in region_map.keys():
             filters = [{'Name': 'tag:peerd_created', 'Values': ['true']},
@@ -258,7 +265,7 @@ def get_all_env_peerings(config: list, metadata: dict) -> list:
     return deduplicate_list_dicts(peerings, 'VpcPeeringConnectionId')
 
 
-def get_deletable_peerings(peerings: list, vpc_list: list) -> list:
+def get_deletable_peerings(peerings: Sequence[dict], vpc_list: Sequence[str]) -> List[dict]:
     """
     Given a list of peerings that exist in the infrastructure, and a
     list of vpcs that are configured to be members of this environment,

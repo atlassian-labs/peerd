@@ -21,9 +21,9 @@ except ImportError:
 
 # peerd
 import peerd.aws
-from peerd.filters import filter_working_accounts, target_vpc_peerings
+from peerd.filters import chunk_list, filter_working_accounts, target_vpc_peerings
 from peerd.aws import describe_vpc_cached
-from peerd.core import create_vpc_peerings, update_route_tables, delete_unneeded_peerings
+from peerd.core import accept_vpc_peerings, create_vpc_peerings, update_route_tables, delete_unneeded_peerings
 
 # Logging
 # Default loglevels.
@@ -223,8 +223,12 @@ def main(args):
     # Get the peerings which should exist in this environment
     target_peerings = target_vpc_peerings(filtered_config)
 
-    # Create and accept vpc peerings
-    create_vpc_peerings(target_peerings, metadata, args.dryrun)
+    # Create and accept vpc peerings.
+    # We must chunk the target_peerings into 25 as no single VPC may have more then 25
+    # outstanding peering requests.
+    for chunked_peerings in chunk_list(target_peerings, 25):
+        pending_acceptance_peerings = create_vpc_peerings(chunked_peerings, metadata, args.dryrun)
+        accept_vpc_peerings(pending_acceptance_peerings, metadata, args.dryrun)
 
     # Manage the route tables for the peerings
     update_route_tables(target_peerings, metadata, args.dryrun)
@@ -239,6 +243,9 @@ def main(args):
     # Print out the number of warnings or errors, if any.
     logger.info(f'Number of warnings: {logger.warning.counter}')
     logger.info(f'Number of errors: {logger.error.counter}')
+    if logger.error.counter > 0:
+        logger.error('Number of errors greater than one. Setting non-zero exit code. Inspect logs.')
+        sys.exit(1)
 
 
 if __name__ == '__main__':
