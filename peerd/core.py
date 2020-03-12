@@ -328,7 +328,6 @@ def update_route_tables(target_peerings: list, metadata: Mapping, dryrun: bool) 
                     # Find any existing route for this cidr
                     # Handle case the route is not a ipv4 route, e.g. S3 endpoint
                     if route.get('DestinationCidrBlock', None) == cidr:
-                        # Handle some edge cases
                         # Delete the cidr if it points at a blackhole
                         if route['State'] == 'blackhole':
                             LOGGER.warning(f'Blackhole in: {account_id} {vpc_id} {route_table_id} for {cidr}. Deleting.')
@@ -340,6 +339,9 @@ def update_route_tables(target_peerings: list, metadata: Mapping, dryrun: bool) 
                                 if err.response['Error']['Code'] != 'DryRunOperation':
                                     raise
                             # We continue here instead of breaking so that we install the correct route.
+                            continue
+                        if route.get('Origin', None) == 'EnableVgwRoutePropagation':
+                            LOGGER.debug(f"{account_id} {vpc_id} {route_table_id} {cidr} pointing at {route['GatewayId']}. Static route may co-exist.")
                             continue
                         # Break if the cidr is not pointing at a peering id
                         if 'VpcPeeringConnectionId' not in route:

@@ -168,10 +168,10 @@ environments:
 ## Deleting a peering
 
 Simply remove the vpc block from the configuration file then re-run the tool.
-Note: Only remove one VPC at a time, the tool does not keep state. If multiple VPCs are removed at once, then it is possible to create isolated peerings that are not cleaned up.
 
-For example, if a mesh contains VPCs: A B C D E, to remove D and E from the mesh, first remove D from the config and run the tool, then E and run the tool again.
-If D and E are removed at the same time, a peering would persist between D and E despite all others with A B and C being cleaned up.
+Note: The tool does not keep state, but it is possible to remove multiple VPCs at a time. When run, the tool will go through all existing peerings that terminate in accounts in the config file, and will check if any of them peers with accounts not listed the config file. If it finds any, it will login to those accounts, and determine if there are additional peerings to delete.
+
+For this reason, __to completely delete an entire mesh__, first remove all VPCs from the config file except one (the tool will need one to be able to determine all the peerings that have to be deleted). Once all peerings are deleted, you can safely remove the last one from the config file.
 
 ## Thanks
 
@@ -179,5 +179,5 @@ Shane Anderson, Nicolas Meessen, Abdul Karim, James Flemming, Michael Gehrmann, 
 
 ## License
 
-Copyright (c) 2020 Atlassian and others. Apache 2.0 licensed, see LICENSE file.
+Copyright (c) 2020 Atlassian and others. Apache 2.0 licensed, see LICENSE.txt file.
 USA Patent Pending 15/788,229. 

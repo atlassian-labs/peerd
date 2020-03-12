@@ -9,6 +9,7 @@ from typing import Any, List, Mapping, Optional
 import boto3
 import botocore
 from botocore.config import Config
+import cachetools
 
 # Local
 from peerd import LOGGER, nested_dict
@@ -17,12 +18,13 @@ from peerd.decorators import memoize
 # Global data structures
 
 # Global variablees
-CLIENT_CACHE = nested_dict()
 COMMON_PRINCIPAL_NAME: Optional[str] = None
 ROLE_SESSION_NAME: Optional[str] = None
-STS_CLIENT_CACHE = None
 
 
+# The sts client and credentials are generally valid for 60 minutes
+# We use 55 minutes here to be safe
+@cachetools.cached(cachetools.TTLCache(10000, 55*60))
 def aws_sts_client() -> Any:
     """
     Uses default boto credentials locations, such as the instance metadata
@@ -30,15 +32,15 @@ def aws_sts_client() -> Any:
 
     :returns: AWS STS client connection
     """
-    global STS_CLIENT_CACHE
 
-    if not STS_CLIENT_CACHE:
-        STS_CLIENT_CACHE = boto3.client('sts', config=Config(retries=dict(max_attempts=10)))
-        LOGGER.info(f'Found the following STS identity:\n{json.dumps(STS_CLIENT_CACHE.get_caller_identity(), indent=2)}')
-    return STS_CLIENT_CACHE
+    sts_client = boto3.client('sts', config=Config(retries=dict(max_attempts=10)))
+    LOGGER.info(f'Found the following STS identity:\n{json.dumps(sts_client.get_caller_identity(), indent=2)}')
+    return sts_client
 
 
-@memoize(timedelta(minutes=55))
+# We cache the iam role credentials for less time than the client to avoid 
+# creating new clients with old credentials
+@cachetools.cached(cachetools.TTLCache(10000, 29*60))
 def get_role_credentials(account: str, sts_client: Any) -> dict:
     """
     Assumes a role and returns credentials for said role.
@@ -74,6 +76,8 @@ def get_role_credentials(account: str, sts_client: Any) -> dict:
         return {}
 
 
+# AWS Clients, via associated credentials, are valid for 60 minutes. To be safe we use 30.
+@cachetools.cached(cachetools.TTLCache(10000, 30*60))
 def aws_client(account: str, service: str, region: str) -> Any:
     """
     Initialises a sts client, gets assume role credentials
@@ -90,35 +94,27 @@ def aws_client(account: str, service: str, region: str) -> Any:
     :type region: str
     """
 
-    global CLIENT_CACHE
-
     # In this block we get credentials for the target account by assuming
     # into the given account using a sts client connection
     # If we can't we return none and cache none.
     if not (credentials := get_role_credentials(account, aws_sts_client())):
         LOGGER.warning(f'Unable to tokenise into {account} for service {service} in region {region}. Moving on')
-        CLIENT_CACHE[account][region][service] = None
         return None
 
     # In this block we use the account credentials we got above, to create and cache a client
     # connection to an AWS service.
-    if service not in CLIENT_CACHE[account][region]:
-        try:
-            CLIENT_CACHE[account][region][service] = boto3.client(
-                service,
-                region_name=region,
-                aws_access_key_id=credentials['AccessKeyId'],
-                aws_secret_access_key=credentials['SecretAccessKey'],
-                aws_session_token=credentials['SessionToken'],
-                config=Config(retries=dict(max_attempts=10)))
-            LOGGER.info('Obtained fresh client connection.')
-        except BaseException:
-            LOGGER.error(f'Unexpected error: {sys.exc_info()[1]}', exc_info=True)
-            CLIENT_CACHE[account][region][service] = None
-    else:
-        LOGGER.debug('Fetched a cached client connection.')
-
-    return CLIENT_CACHE[account][region][service]
+    try:
+        client =  boto3.client(
+            service,
+            region_name=region,
+            aws_access_key_id=credentials['AccessKeyId'],
+            aws_secret_access_key=credentials['SecretAccessKey'],
+            aws_session_token=credentials['SessionToken'],
+            config=Config(retries=dict(max_attempts=10)))
+        LOGGER.debug('Obtained fresh client connection.')
+        return client
+    except BaseException:
+        LOGGER.error(f'Unexpected error: {sys.exc_info()[1]}', exc_info=True)
 
 
 def tag_resource(client: Any, resource: str, tags: Mapping, dryrun: bool = False) -> None:

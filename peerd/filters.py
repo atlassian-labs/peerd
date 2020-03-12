@@ -1,6 +1,7 @@
 # Built in
+from copy import deepcopy
 from itertools import combinations
-from typing import List, Mapping, Sequence
+from typing import List, Mapping, Sequence, Set, Tuple
 
 # Local
 from peerd import LOGGER, nested_dict
@@ -245,7 +246,6 @@ def get_all_env_peerings(config: Sequence[dict], metadata: Mapping) -> List[dict
     Given the configuration, find all the peerings which exist across all accounts
     and regions.
     See https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ec2.html#EC2.Client.describe_vpc_peering_connections
-
     :param config: A list containing dictionaries representing the configuration for the environment
     :type config: list
     :param key: The key to deduplicate on.
@@ -253,15 +253,28 @@ def get_all_env_peerings(config: Sequence[dict], metadata: Mapping) -> List[dict
     :rtype: list
     """
     # Get a dictionary of accounts, regions, vpcs and the vpcs they should be peered to
-    config_peer_map = get_peering_map(config)
+    config_peer_map = deepcopy(get_peering_map(config))
+    # Initialise a filter to get vpc peerings relevant to the current environment being worked on
+    filters = [{'Name': 'tag:peerd_created', 'Values': ['true']},
+               {'Name': 'tag:peerd_environment', 'Values': [metadata['environment']]},
+               {'Name': 'status-code', 'Values': ['active']}]
+    # Get all existing peerings from accounts listed in the config file
     peerings: List[dict] = []
-    for account_id, region_map in config_peer_map.items():
-        for region in region_map.keys():
-            filters = [{'Name': 'tag:peerd_created', 'Values': ['true']},
-                       {'Name': 'tag:peerd_environment', 'Values': [metadata['environment']]},
-                       {'Name': 'status-code', 'Values': ['active']}]
+    for account_id in config_peer_map.keys():
+        for region in config_peer_map[account_id].keys():
             peerings.extend(get_all_peerings(account_id, region, filters))
-    # Deduplicate and return the list
+    # Now get all existing peerings from all accounts that participate in peerings
+    # (There might be accounts not listed in the config file)
+    for peering in peerings:
+        for side in ('RequesterVpcInfo', 'AccepterVpcInfo'):
+            account_id = peering[side]['OwnerId']
+            region = peering[side]['Region']
+            if not config_peer_map[account_id][region]:
+                LOGGER.debug(f'Found peering to unconfigured account {account_id} region {region}. Inspecting...')
+                peerings.extend(get_all_peerings(account_id, region, filters))
+                config_peer_map[account_id][region] = True
+                LOGGER.debug(f'Discovered additional peerings in {account_id} {region}')
+    # Add the 2 lists, and ceduplicate peerings. These will be all existing peerings even between accounts deleted from the config file
     return deduplicate_list_dicts(peerings, 'VpcPeeringConnectionId')
 
 
