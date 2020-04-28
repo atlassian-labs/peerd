@@ -180,4 +180,4 @@ Shane Anderson, Nicolas Meessen, Abdul Karim, James Flemming, Michael Gehrmann, 
 ## License
 
 Copyright (c) 2020 Atlassian and others. Apache 2.0 licensed, see LICENSE.txt file.
-USA Patent Pending 15/788,229. 
+USA Patent Pending 15/788,229.
