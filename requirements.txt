@@ -2,4 +2,4 @@ boto3==1.11.5
 cachelib==0.1
 cachetools==4.0.0
 coloredlogs==10.0
-PyYAML==5.3
+PyYAML==5.4
