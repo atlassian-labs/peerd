@@ -1,5 +1,7 @@
 # peerd
 
+<img src="logo.svg" alt="peerd logo" width="200" height="200" />
+
 peerd is an AWS VPC Peering Connection management tool. It creates full-meshes of VPCs peerings based on a simple yaml file, and manages the full lifecycle of creation, deletion and route table updates needed to make VPC peerings useful across accounts and regions. Contributions welcome.
 
 ```

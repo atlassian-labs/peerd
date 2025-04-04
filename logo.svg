@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <!-- Background circle -->
+    <circle cx="100" cy="100" r="90" fill="#0052CC" />
+    
+    <!-- Network nodes representing VPCs -->
+    <circle cx="70" cy="60" r="15" fill="#FFFFFF" />
+    <circle cx="130" cy="60" r="15" fill="#FFFFFF" />
+    <circle cx="70" cy="140" r="15" fill="#FFFFFF" />
+    <circle cx="130" cy="140" r="15" fill="#FFFFFF" />
+    
+    <!-- Peering connections -->
+    <line x1="70" y1="60" x2="130" y2="60" stroke="#FFFFFF" stroke-width="4"/>
+    <line x1="70" y1="60" x2="70" y2="140" stroke="#FFFFFF" stroke-width="4"/>
+    <line x1="130" y1="60" x2="130" y2="140" stroke="#FFFFFF" stroke-width="4"/>
+    <line x1="70" y1="140" x2="130" y2="140" stroke="#FFFFFF" stroke-width="4"/>
+    <line x1="70" y1="60" x2="130" y2="140" stroke="#FFFFFF" stroke-width="4"/>
+    <line x1="130" y1="60" x2="70" y2="140" stroke="#FFFFFF" stroke-width="4"/>
+    
+    <!-- Text -->
+    <text x="100" y="100" font-family="Arial" font-size="24" font-weight="bold" fill="#FFFFFF" text-anchor="middle">peerd</text>
+</svg>
